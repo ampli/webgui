@@ -1,4 +1,3 @@
-
 /*global WebGUI*/
 // Initialize namespace
 if (typeof WebGUI == "undefined") {
@@ -8,6 +7,15 @@ if (typeof WebGUI.Form == "undefined") {
     WebGUI.Form = {};
 }
 
+WebGUI.Form.editorByFormat = function ( format ) {
+    switch( format ) {
+    case "text":
+    case "number":
+    case "link":
+        return "textbox";
+    }
+    return format;
+};
 
 /**
  * This object contains scripts for the DataTable form control
@@ -109,6 +117,12 @@ WebGUI.Form.DataTable
         var e   = obj.event;
         if ( e.keyCode == 9 || e.keyCode == 13 ) {
             var cell        = this.dataTable.getCellEditor().getTdEl();
+
+            // Avoid terminating a textarea CellEditor on enter
+            if ( e.keyCode == 13 && this.dataTable.getColumn( cell ).editor.textarea ) {
+                return;
+            }
+
             var nextCell    = this.dataTable.getNextTdEl( cell );
             this.dataTable.saveCellEditor();
             if ( nextCell ) {
@@ -215,14 +229,86 @@ WebGUI.Form.DataTable
             dataTableOptions.initialRequest     = "";
         }
 
+        for ( var i = 0; i < this.columns.length; i++ ) {
+            this.columns[ i ].editor = WebGUI.Form.editorByFormat( this.columns[ i ].formatter );
+        }
+
+        var widget      = YAHOO.widget,
+            DT          = widget.DataTable;
+
+        // Dynamically add HTMLarea field type
+        // HTMLAreaCellEditor is like TextareaCellEditor, but with an additional property "htmlarea" which is true
+        var HTMLAreaCellEditor = function(a) {
+            widget.TextareaCellEditor.superclass.constructor.call(this, a);
+        };
+        YAHOO.lang.extend(HTMLAreaCellEditor, widget.TextareaCellEditor);
+        HTMLAreaCellEditor.prototype[ "htmlarea" ] = true;
+        // Extend the static arrays of editors and formatters
+        DT.Editors[ "htmlarea" ] = HTMLAreaCellEditor;
+        //DT.Formatter[ "htmlarea" ] = DT.formatTextarea;
+
+        DT.Formatter[ "htmlarea" ] = DT.Formatter[ "textarea" ] =
+            function(el, oRecord, oColumn, oData) {
+                var value = YAHOO.lang.isValue(oData) ? oData : "",
+                    markup = "<div class='webgui-dt-area' style='height:50px;width:150px;overflow-y:auto'>" + value + "</div>";
+                el.innerHTML = markup;
+            };
+
+
         this.dataTable = new YAHOO.widget.DataTable(
             this.containerId,
             this.columns,
             this.dataSource,
             dataTableOptions
         );
-
         if ( this.options.showEdit ) {
+            var tinymceEdit = "tinymce-edit";
+
+            this.dataTable.doBeforeShowCellEditor = function( oCellEditor ) {
+                if ( !oCellEditor.htmlarea ) {
+                    return true;
+                }
+
+                oCellEditor.getInputValue = function() {
+                    var orig_value = this.textarea.innerHTML;
+                    var mceIframe = document.getElementById( tinymceEdit + "_ifr" );
+                    if ( !mceIframe ) {
+                        alert( "Internal error: TinyMCE id='" + tinymceEdit + "_ifr' not found!" );
+                        return orig_value;
+                    }
+                    var mceIframeDoc = ( mceIframe.contentWindow || mceIframe.contentDocument );
+                    if ( !mceIframeDoc ) {
+                        alert( "Internal error: Frame content of id='" + tinymceEdit + "_ifr' not found!" );
+                        return orig_value;
+                    }
+                    if ( mceIframeDoc.document ) {
+                        mceIframeDoc = mceIframeDoc.document;
+                    }
+
+                    if ( mceIframeDoc && mceIframeDoc.body ) {
+                        return mceIframeDoc.body.innerHTML;
+                    }
+                    alert( "Internal error: <body> of TinyMCE id='" + tinymceEdit + "_ifr' not found!" );
+                    return orig_value;
+                };
+      
+                oCellEditor.textarea.setAttribute( 'id', tinymceEdit );
+                tinyMCE.execCommand( 'mceAddControl', false, tinymceEdit );
+                setTimeout(function(){ tinyMCE.execCommand( 'mceFocus',false, tinymceEdit ); }, 0);
+                return true;
+            };
+
+            // Remove TinyMCE on save or cancel
+            mceRemoveControl = function (oArgs ) {
+                var oCellEditor = oArgs.editor;
+                if ( oCellEditor.htmlarea ) {
+                    tinyMCE.execCommand( 'mceRemoveControl', false, tinymceEdit );
+                    oCellEditor.textarea.removeAttribute( 'id' );
+                }
+            };
+            this.dataTable.subscribe( "editorSaveEvent", mceRemoveControl);
+            this.dataTable.subscribe( "editorCancelEvent", mceRemoveControl);
+            
             // Add the class so our editors get the right skin
             YAHOO.util.Dom.addClass( document.body, "yui-skin-sam" );
 
@@ -333,6 +419,8 @@ WebGUI.Form.DataTable
                     "format link",
                     "format number",
                     "format date",
+                    "format textarea",
+                    "format htmlarea",
                     "add column",
                     "cancel",
                     "ok",
@@ -365,7 +453,7 @@ WebGUI.Form.DataTable
             var helpDialog  = new YAHOO.widget.Panel( "helpWindow", {
                 modal       : false,
                 draggable   : true,
-                zIndex      : 1000
+                zIndex      : 10000
             } );
             helpDialog.setHeader( "DataTable Help" );
             helpDialog.setBody( 
@@ -404,28 +492,16 @@ WebGUI.Form.DataTable
         };
 
         var buttonLabel = this.i18n.get( "Form_DataTable", "delete column" );
-        var availableFormats    = [
-            {
-                "value" : "text",
-                "label" : this.i18n.get( "Form_DataTable", "format text" )
-            },
-            {
-                "value" : "number",
-                "label" : this.i18n.get( "Form_DataTable", "format number" )
-            },
-            {
-                "value" : "email",
-                "label" : this.i18n.get( "Form_DataTable", "format email" )
-            },
-            {
-                "value" : "link",
-                "label" : this.i18n.get( "Form_DataTable", "format link" )
-            },
-            {
-                "value" : "date",
-                "label" : this.i18n.get( "Form_DataTable", "format date" )
-            }
-        ];
+        var availableFormats = [];
+        var formatType = [ "text", "number", "email", "link", "date", "textarea", "htmlarea" ];
+        for ( var fti = 0; fti < formatType.length; fti++) {
+            availableFormats.push(
+                {
+                    "value" : formatType[fti],
+                    "label" : this.i18n.get( "Form_DataTable", "format " + formatType[fti] )
+                }
+             );
+        }
         
         // function for creating new database columns to the table schema
         var createTableColumn = function(i,cols) {
@@ -595,7 +671,7 @@ WebGUI.Form.DataTable
     this.updateSchema
     = function () {
         var data        = this.schemaDialog.getData();
-        
+
         // First delete columns
         var deleteCols  = YAHOO.lang.JSON.parse( data[ "deleteCols" ] );
         for ( var x = 0; x < deleteCols.length; x++ ) {
@@ -603,6 +679,7 @@ WebGUI.Form.DataTable
             this.dataTable.removeColumn( col );
         }
 
+        
         // Update columns
         var i           = 0;
         while ( data[ "newKey_" + i ] ) {
@@ -633,7 +710,7 @@ WebGUI.Form.DataTable
                 formatter   : format,
                 resizeable  : ( col ? col.resizeable : 1 ),
                 sortable    : ( col ? col.sortable : 1 ),
-                editor      : ( format == "date" ? "date" : "textbox")
+                editor      : WebGUI.Form.editorByFormat( format )
             };
             if ( format == "date" ) {
                 newCol["dateOptions"] = { format : this.options.dateFormat };
@@ -664,9 +741,9 @@ WebGUI.Form.DataTable
                     }
                 }
             }
+
             i++;
         }
-
         this.dataTable.render();
         this.schemaDialog.cancel();
     };
