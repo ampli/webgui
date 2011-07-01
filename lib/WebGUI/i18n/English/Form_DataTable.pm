@@ -74,6 +74,18 @@ our $I18N = {
         context     => q{Format for a column with a date},
     },
 
+    "format textarea" => {
+        message     => q{Textarea},
+        lastUpdated => 0,
+        context     => q{Format for a textarea column},
+    },
+
+    "format htmlarea" => {
+        message     => q{HTMLarea},
+        lastUpdated => 0,
+        context     => q{Format for an HTMLarea column},
+    },
+
     "add column" => {
         message     => q{Add Column},
         lastUpdated => 0,
