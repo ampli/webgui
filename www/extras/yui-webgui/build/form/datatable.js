@@ -7,16 +7,6 @@ if (typeof WebGUI.Form == "undefined") {
     WebGUI.Form = {};
 }
 
-WebGUI.Form.editorByFormat = function ( format ) {
-    switch( format ) {
-    case "text":
-    case "number":
-    case "link":
-        return "textbox";
-    }
-    return format;
-};
-
 /**
  * This object contains scripts for the DataTable form control
  */
@@ -46,6 +36,21 @@ WebGUI.Form.DataTable
     this.form                   = undefined;
     this.options                = options;
     this.schemaDialog           = undefined;
+
+    /************************************************************************
+     * editorByFormat ( event, data )
+     * Return the DataTable editor type that matches the given format
+     */
+    this.editorByFormat
+    = function ( format ) {
+        switch( format ) {
+        case "text":
+        case "number":
+        case "link":
+            return "textbox";
+        }
+        return format;
+    };
 
     /************************************************************************
      * addRow ( event, data )
@@ -120,7 +125,7 @@ WebGUI.Form.DataTable
 
             // Avoid terminating a textarea CellEditor on enter
             if ( e.keyCode == 13 && this.dataTable.getColumn( cell ).editor.textarea ) {
-                return;
+                return false;
             }
 
             var nextCell    = this.dataTable.getNextTdEl( cell );
@@ -230,7 +235,7 @@ WebGUI.Form.DataTable
         }
 
         for ( var i = 0; i < this.columns.length; i++ ) {
-            this.columns[ i ].editor = WebGUI.Form.editorByFormat( this.columns[ i ].formatter );
+            this.columns[ i ].editor = this.editorByFormat( this.columns[ i ].formatter );
         }
 
         var widget      = YAHOO.widget,
@@ -367,7 +372,6 @@ WebGUI.Form.DataTable
                     scope       : this
                 }
             } );
-            
             // This data table will be submitted async
             if ( this.options.ajaxSaveUrl ) {
                 var save        = new YAHOO.widget.Button( {
@@ -710,7 +714,7 @@ WebGUI.Form.DataTable
                 formatter   : format,
                 resizeable  : ( col ? col.resizeable : 1 ),
                 sortable    : ( col ? col.sortable : 1 ),
-                editor      : WebGUI.Form.editorByFormat( format )
+                editor      : this.editorByFormat( format )
             };
             if ( format == "date" ) {
                 newCol["dateOptions"] = { format : this.options.dateFormat };
