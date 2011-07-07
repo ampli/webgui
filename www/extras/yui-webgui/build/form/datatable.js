@@ -223,7 +223,13 @@ WebGUI.Form.DataTable
         }
 
         var dataTableOptions    = { 
-            dateOptions : { format : this.options.dateFormat }
+            dateOptions : {
+                format :        this.options.dateFormat,
+                MSG_LOADING :   this.i18n.get( "WebGUI", "Loading..." ),
+                MSG_ERROR :     this.i18n.get( "Form_DataTable", "data error" ),
+                MSG_SORTASC :   this.i18n.get( "Form_DataTable", "sort ascending" ),
+                MSG_SORTDESC :  this.i18n.get( "Form_DataTable", "sort descending" )
+            }
         };
 
         if ( this.options.showEdit ) {
@@ -246,19 +252,28 @@ WebGUI.Form.DataTable
         var HTMLAreaCellEditor = function(a) {
             widget.TextareaCellEditor.superclass.constructor.call(this, a);
         };
-        YAHOO.lang.extend(HTMLAreaCellEditor, widget.TextareaCellEditor);
-        HTMLAreaCellEditor.prototype[ "htmlarea" ] = true;
+        YAHOO.lang.extend( HTMLAreaCellEditor, widget.TextareaCellEditor, {
+            htmlarea : true
+        } );
         // Extend the static arrays of editors and formatters
         DT.Editors[ "htmlarea" ] = HTMLAreaCellEditor;
-        //DT.Formatter[ "htmlarea" ] = DT.formatTextarea;
 
-        DT.Formatter[ "htmlarea" ] = DT.Formatter[ "textarea" ] =
-            function(el, oRecord, oColumn, oData) {
-                var value = YAHOO.lang.isValue(oData) ? oData : "",
-                    markup = "<div class='webgui-dt-area' style='height:50px;width:150px;overflow-y:auto'>" + value + "</div>";
-                el.innerHTML = markup;
+        // Define classes "wg-dt-textarea" and "wg-dt-htmlarea" that can be overided by a stylesheet
+        // (e.g. in the extraHeadTags of the asset).
+        var style = this.options.showEdit ? "style='height:50px;width:150px;overflow-y:auto'" : "";
+        var formatter = function ( type ) {
+            var fmt = function( el, oRecord, oColumn, oData ) {
+                var value = YAHOO.lang.isValue(oData) ? oData : "";
+                el.innerHTML = "<div class='wg-dt-" + type + "'" + style + ">" + value + "</div>";
             };
+            return fmt;
+        };
+        DT.Formatter[ "textarea" ] = formatter( "textarea" );
+        DT.Formatter[ "htmlarea" ] = formatter( "htmlarea" );
 
+        // XXX
+        widget.BaseCellEditor.prototype.LABEL_SAVE   = this.i18n.get( "Form_DataTable", "save" );
+        widget.BaseCellEditor.prototype.LABEL_CANCEL = this.i18n.get( "Form_DataTable", "cancel" );
 
         this.dataTable = new YAHOO.widget.DataTable(
             this.containerId,
@@ -266,6 +281,7 @@ WebGUI.Form.DataTable
             this.dataSource,
             dataTableOptions
         );
+
         if ( this.options.showEdit ) {
             var tinymceEdit = "tinymce-edit";
 
@@ -275,7 +291,7 @@ WebGUI.Form.DataTable
                 }
 
                 oCellEditor.getInputValue = function() {
-                    var orig_value = this.textarea.innerHTML;
+                    var orig_value = this.textarea.value;
                     var mceIframe = document.getElementById( tinymceEdit + "_ifr" );
                     if ( !mceIframe ) {
                         alert( "Internal error: TinyMCE id='" + tinymceEdit + "_ifr' not found!" );
@@ -296,7 +312,7 @@ WebGUI.Form.DataTable
                     alert( "Internal error: <body> of TinyMCE id='" + tinymceEdit + "_ifr' not found!" );
                     return orig_value;
                 };
-      
+
                 oCellEditor.textarea.setAttribute( 'id', tinymceEdit );
                 tinyMCE.execCommand( 'mceAddControl', false, tinymceEdit );
                 setTimeout(function(){ tinyMCE.execCommand( 'mceFocus',false, tinymceEdit ); }, 0);
@@ -313,7 +329,7 @@ WebGUI.Form.DataTable
             };
             this.dataTable.subscribe( "editorSaveEvent", mceRemoveControl);
             this.dataTable.subscribe( "editorCancelEvent", mceRemoveControl);
-            
+
             // Add the class so our editors get the right skin
             YAHOO.util.Dom.addClass( document.body, "yui-skin-sam" );
 
@@ -434,7 +450,13 @@ WebGUI.Form.DataTable
                     "help select row",
                     "help add row",
                     "help default sort",
-                    "help reorder column"
+                    "help reorder column",
+                    "data error",
+                    "sort ascending",
+                    "sort descending"
+                ],
+                'WebGUI' : [
+                    "Loading..."
                 ]
             },
             onpreload   : {
@@ -683,7 +705,6 @@ WebGUI.Form.DataTable
             this.dataTable.removeColumn( col );
         }
 
-        
         // Update columns
         var i           = 0;
         while ( data[ "newKey_" + i ] ) {
@@ -704,7 +725,7 @@ WebGUI.Form.DataTable
                 var rows    = this.dataTable.getRecordSet().getRecords();
                 for ( var r = 0; r < rows.length; r++ ) {
                     rows[ r ].setData( newKey, rows[ r ].getData( oldKey ) );
-                    rows[ r ].setData( oldKey, undefined ); 
+                    rows[ r ].setData( oldKey, undefined );
                 }
             }
 
