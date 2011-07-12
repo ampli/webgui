@@ -118,23 +118,22 @@ WebGUI.Form.DataTable
     /************************************************************************
      * handleEditorKeyEvent ( obj )
      * Handle a keypress when the Cell Editor is open
-     * Enter will close the editor and move down
+     * Not implemented: Enter will close the editor and move down
      * Tab will close the editor and move right.
-     * Use the handleTableKeyEvent() to handle the moving
      * Open a new cell editor on the newly focused cell
      */
     this.handleEditorKeyEvent
     = function ( obj ) {
         // 9 = tab, 13 = enter
         var e   = obj.event;
-        if ( e.keyCode == 9 || e.keyCode == 13 ) {
+
+        // Avoid terminating the editor on enter
+        if ( e.keyCode == 13) {
+            return false;
+        }
+
+        if ( e.keyCode == 9) {
             var cell        = this.dataTable.getCellEditor().getTdEl();
-
-            // Avoid terminating a textarea CellEditor on enter
-            if ( e.keyCode == 13 && this.dataTable.getColumn( cell ).editor.textarea ) {
-                return false;
-            }
-
             var nextCell    = this.dataTable.getNextTdEl( cell );
             this.dataTable.saveCellEditor();
             if ( nextCell ) {
@@ -147,8 +146,6 @@ WebGUI.Form.DataTable
                 // No next cell, make a new row and open the editor for that one
                 this.dataTable.addRow( {} );
             }
-            // BUG: If pressing Enter, editor gets hidden right away due to YUI default event
-            // putting e.preventDefault() and return false here makes no difference
         }
     };
     
@@ -178,7 +175,10 @@ WebGUI.Form.DataTable
      * handleTableKeyEvent ( obj )
      * Handle a keypress inside the DataTable
      * Space will open the cell editor
+     * Note: it doesn't currently work: getSelectedTdEls() always returns [] when selectionMode is "standard"
+     * Commented out for now.
      */
+/*
     this.handleTableKeyEvent 
     = function ( obj ) {
         // 9 = tab, 13 = enter, 32 = space
@@ -190,6 +190,7 @@ WebGUI.Form.DataTable
             }
         }
     };
+*/
 
     /************************************************************************ 
      * hideSchemaDialog ( )
@@ -267,18 +268,17 @@ WebGUI.Form.DataTable
 
         // Define classes "wg-dt-textarea" and "wg-dt-htmlarea" that can be overided by a stylesheet
         // (e.g. in the extraHeadTags of the asset).
-        var style = this.options.showEdit ? "style='height:50px;width:150px;overflow-y:auto'" : "";
         var formatter = function ( type ) {
             var fmt = function( el, oRecord, oColumn, oData ) {
                 var value = YAHOO.lang.isValue(oData) ? oData : "";
-                el.innerHTML = "<div class='wg-dt-" + type + "'" + style + ">" + value + "</div>";
+                el.innerHTML = "<div class='wg-dt-" + type + "'>" + value + "</div>";
             };
             return fmt;
         };
         DT.Formatter[ "textarea" ] = formatter( "textarea" );
         DT.Formatter[ "htmlarea" ] = formatter( "htmlarea" );
 
-        // XXX
+        // XXX need to do it with YUI API
         widget.BaseCellEditor.prototype.LABEL_SAVE   = this.i18n.get( "Form_DataTable", "save" );
         widget.BaseCellEditor.prototype.LABEL_CANCEL = this.i18n.get( "Form_DataTable", "cancel" );
 
@@ -291,6 +291,7 @@ WebGUI.Form.DataTable
 
         if ( this.options.showEdit ) {
             var tinymceEdit = "tinymce-edit";
+            var saveThis = this;
 
             this.dataTable.doBeforeShowCellEditor = function( oCellEditor ) {
                 if ( !oCellEditor.htmlarea ) {
@@ -298,51 +299,43 @@ WebGUI.Form.DataTable
                 }
 
                 oCellEditor.getInputValue = function() {
-                    var orig_value = this.textarea.value;
-                    var mceIframe = document.getElementById( tinymceEdit + "_ifr" );
-                    if ( !mceIframe ) {
-                        alert( "Internal error: TinyMCE id='" + tinymceEdit + "_ifr' not found!" );
-                        return orig_value;
-                    }
-                    var mceIframeDoc = ( mceIframe.contentWindow || mceIframe.contentDocument );
-                    if ( !mceIframeDoc ) {
-                        alert( "Internal error: Frame content of id='" + tinymceEdit + "_ifr' not found!" );
-                        return orig_value;
-                    }
-                    if ( mceIframeDoc.document ) {
-                        mceIframeDoc = mceIframeDoc.document;
-                    }
-
-                    if ( mceIframeDoc && mceIframeDoc.body ) {
-                        return mceIframeDoc.body.innerHTML;
-                    }
-                    alert( "Internal error: <body> of TinyMCE id='" + tinymceEdit + "_ifr' not found!" );
-                    return orig_value;
+                    return tinyMCE.activeEditor.getContent();
                 };
 
                 oCellEditor.textarea.setAttribute( 'id', tinymceEdit );
                 tinyMCE.execCommand( 'mceAddControl', false, tinymceEdit );
                 setTimeout(function(){ tinyMCE.execCommand( 'mceFocus',false, tinymceEdit ); }, 0);
+
+                // watch hitting tab, which should save the current cell and open an editor on the next
+                tinyMCE.activeEditor.onKeyDown.add(
+                    function( eh, t ) {
+                        return function(ed, e) {    // ed unused
+                            eh.call( t, { event: e } );
+                        };
+                    }( saveThis.handleEditorKeyEvent, saveThis )
+                );
+
                 return true;
             };
 
             // Remove TinyMCE on save or cancel
-            mceRemoveControl = function (oArgs ) {
+            var mceRemoveControl = function ( oArgs ) {
                 var oCellEditor = oArgs.editor;
                 if ( oCellEditor.htmlarea ) {
                     tinyMCE.execCommand( 'mceRemoveControl', false, tinymceEdit );
                     oCellEditor.textarea.removeAttribute( 'id' );
                 }
             };
-            this.dataTable.subscribe( "editorSaveEvent", mceRemoveControl);
-            this.dataTable.subscribe( "editorCancelEvent", mceRemoveControl);
+            this.dataTable.subscribe( "editorSaveEvent", mceRemoveControl );
+            this.dataTable.subscribe( "editorCancelEvent", mceRemoveControl );
 
             // Add the class so our editors get the right skin
             YAHOO.util.Dom.addClass( document.body, "yui-skin-sam" );
 
             this.dataTable.subscribe( "cellDblclickEvent", this.dataTable.onEventShowCellEditor ); 
             this.dataTable.subscribe( "rowClickEvent", this.dataTable.onEventSelectRow );
-            this.dataTable.subscribe( "tableKeyEvent", this.handleTableKeyEvent, this, true );
+	    /* this.handleTableKeyEvent() is commented out, see there for the reason */
+            /* this.dataTable.subscribe( "tableKeyEvent", this.handleTableKeyEvent, this, true ); */
             this.dataTable.subscribe( "editorKeydownEvent", this.handleEditorKeyEvent, this, true );
             this.dataTable.subscribe( "editorShowEvent", this.handleEditorShowEvent, this, true );
             this.dataTable.subscribe( "rowAddEvent", this.handleRowAdd, this, true );
